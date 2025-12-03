@@ -1,3 +1,6 @@
+// Load environment variables
+require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -16,11 +19,11 @@ const {
 } = require('./database');
 
 // Configuration - Now dynamically updated
-let BUILD_ID = 'vmu4Pw_jmzBqmxpgPhPRV'; // Initial fallback value
-const BUILD_ID_FILE = path.join(__dirname, '.build-id.txt'); 
+let BUILD_ID = process.env.BUILD_ID || 'vmu4Pw_jmzBqmxpgPhPRV'; // Initial fallback value
+const BUILD_ID_FILE = path.join(__dirname, '.build-id.txt');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // Load saved BUILD_ID if available
 const loadBuildId = async () => {
