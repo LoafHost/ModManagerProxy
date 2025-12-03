@@ -49,35 +49,142 @@ const saveBuildId = async (newBuildId) => {
 const detectBuildId = async () => {
   try {
     console.log('🔍 Detecting current BUILD_ID from Arma Reforger Workshop...');
-    const response = await axios.get('https://reforger.armaplatform.com/workshop', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      },
-      timeout: 15000
-    });
 
-    // Extract BUILD_ID from the HTML - it's in the Next.js page data
-    const html = response.data;
-    const buildIdMatch = html.match(/"buildId":"([^"]+)"/);
+    // Strategy 1: Try to extract from any working mod page
+    // This is more reliable than the main page as it's less likely to be blocked
+    try {
+      console.log('📍 Strategy 1: Trying to extract BUILD_ID from a known working mod page...');
+      const testModResponse = await axios.get('https://reforger.armaplatform.com/workshop/659527E5E537EAA4', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0'
+        },
+        timeout: 15000,
+        maxRedirects: 5
+      });
 
-    if (buildIdMatch && buildIdMatch[1]) {
-      const newBuildId = buildIdMatch[1];
-      console.log(`✅ Detected BUILD_ID: ${newBuildId}`);
+      const html = testModResponse.data;
 
-      if (newBuildId !== BUILD_ID) {
-        console.log(`🔄 BUILD_ID changed from ${BUILD_ID} to ${newBuildId}`);
-        BUILD_ID = newBuildId;
-        await saveBuildId(newBuildId);
-        return true; // Indicate BUILD_ID was updated
+      // Try multiple patterns to extract BUILD_ID
+      const patterns = [
+        /"buildId":"([a-zA-Z0-9_\-]+)"/,  // Standard JSON format
+        /'buildId':'([a-zA-Z0-9_\-]+)'/,  // Single quotes
+        /buildId["\s:]+([a-zA-Z0-9_\-]+)/i, // Flexible pattern
+        /__NEXT_DATA__[^{]*{[^}]*"buildId":"([^"]+)"/,  // From __NEXT_DATA__ script
+        /_next\/data\/([a-zA-Z0-9_\-]+)\//  // From URL in page source
+      ];
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+          const newBuildId = match[1];
+          // Validate it looks like a build ID (alphanumeric, dashes, underscores)
+          if (/^[a-zA-Z0-9_\-]{10,}$/.test(newBuildId)) {
+            console.log(`✅ Detected BUILD_ID using pattern: ${newBuildId}`);
+
+            if (newBuildId !== BUILD_ID) {
+              console.log(`🔄 BUILD_ID changed from ${BUILD_ID} to ${newBuildId}`);
+              BUILD_ID = newBuildId;
+              await saveBuildId(newBuildId);
+              return true; // Indicate BUILD_ID was updated
+            }
+            console.log(`✓ BUILD_ID unchanged: ${BUILD_ID}`);
+            return false; // BUILD_ID unchanged
+          }
+        }
       }
-      return false; // BUILD_ID unchanged
-    } else {
-      console.error('⚠️  Could not extract BUILD_ID from workshop page');
-      return false;
+
+      console.log('⚠️  Could not extract BUILD_ID using known patterns from mod page');
+    } catch (modPageError) {
+      console.log(`⚠️  Strategy 1 failed: ${modPageError.message}`);
     }
+
+    // Strategy 2: Try the main workshop page
+    try {
+      console.log('📍 Strategy 2: Trying main workshop page...');
+      const response = await axios.get('https://reforger.armaplatform.com/workshop', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0'
+        },
+        timeout: 15000,
+        maxRedirects: 5
+      });
+
+      const html = response.data;
+      const patterns = [
+        /"buildId":"([a-zA-Z0-9_\-]+)"/,
+        /'buildId':'([a-zA-Z0-9_\-]+)'/,
+        /buildId["\s:]+([a-zA-Z0-9_\-]+)/i,
+        /__NEXT_DATA__[^{]*{[^}]*"buildId":"([^"]+)"/,
+        /_next\/data\/([a-zA-Z0-9_\-]+)\//
+      ];
+
+      for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (match && match[1] && /^[a-zA-Z0-9_\-]{10,}$/.test(match[1])) {
+          const newBuildId = match[1];
+          console.log(`✅ Detected BUILD_ID from main page: ${newBuildId}`);
+
+          if (newBuildId !== BUILD_ID) {
+            console.log(`🔄 BUILD_ID changed from ${BUILD_ID} to ${newBuildId}`);
+            BUILD_ID = newBuildId;
+            await saveBuildId(newBuildId);
+            return true;
+          }
+          console.log(`✓ BUILD_ID unchanged: ${BUILD_ID}`);
+          return false;
+        }
+      }
+    } catch (mainPageError) {
+      console.log(`⚠️  Strategy 2 failed: ${mainPageError.message}`);
+    }
+
+    // Strategy 3: Try to probe API endpoints with common BUILD_IDs or test the current one
+    try {
+      console.log('📍 Strategy 3: Validating current BUILD_ID...');
+      const testUrl = `https://reforger.armaplatform.com/_next/data/${BUILD_ID}/workshop.json`;
+      const testResponse = await axios.get(testUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://reforger.armaplatform.com/'
+        },
+        timeout: 10000
+      });
+
+      if (testResponse.status === 200) {
+        console.log(`✅ Current BUILD_ID (${BUILD_ID}) is still valid`);
+        return false; // Current BUILD_ID works
+      }
+    } catch (apiTestError) {
+      console.log(`⚠️  Strategy 3: Current BUILD_ID may be invalid: ${apiTestError.message}`);
+    }
+
+    console.error('❌ All BUILD_ID detection strategies failed. Using fallback BUILD_ID:', BUILD_ID);
+    console.error('💡 Tip: Visit https://reforger.armaplatform.com/workshop in a browser and check the page source for buildId');
+    return false;
+
   } catch (error) {
-    console.error('❌ Failed to detect BUILD_ID:', error.message);
+    console.error('❌ Fatal error in BUILD_ID detection:', error.message);
     return false;
   }
 };
@@ -136,17 +243,26 @@ let dbInitialized = false;
 
 // Async initialization
 (async () => {
+  console.log('🚀 Starting Arma Reforger Proxy initialization...');
+
   // Load BUILD_ID first
   await loadBuildId();
+  console.log(`📋 Initial BUILD_ID: ${BUILD_ID}`);
 
   // Try to detect and update BUILD_ID on startup
-  await detectBuildId();
+  console.log('🔍 Attempting to auto-detect current BUILD_ID...');
+  const detected = await detectBuildId();
+  if (detected) {
+    console.log(`✅ BUILD_ID auto-detected and updated: ${BUILD_ID}`);
+  } else {
+    console.log(`ℹ️  Using BUILD_ID: ${BUILD_ID}`);
+  }
 
   // Initialize database
   try {
     await initDatabase();
     dbInitialized = true;
-    console.log('🚀 Database initialized successfully');
+    console.log('✅ Database initialized successfully');
 
     // REMOVED: No automatic cache cleanup - cache forever!
     // cleanExpiredCache();
@@ -155,6 +271,24 @@ let dbInitialized = false;
     console.error('⚠️  Database initialization failed, running without cache:', error.message);
     dbInitialized = false;
   }
+
+  // Set up periodic BUILD_ID refresh (every 6 hours)
+  // This ensures we stay updated without manual intervention
+  setInterval(async () => {
+    console.log('🔄 Periodic BUILD_ID check...');
+    try {
+      const updated = await detectBuildId();
+      if (updated) {
+        console.log(`✅ Periodic check: BUILD_ID updated to ${BUILD_ID}`);
+      } else {
+        console.log(`✓ Periodic check: BUILD_ID still valid (${BUILD_ID})`);
+      }
+    } catch (error) {
+      console.error('❌ Periodic BUILD_ID check failed:', error.message);
+    }
+  }, 6 * 60 * 60 * 1000); // Run every 6 hours
+
+  console.log('✅ Proxy initialization complete!');
 })();
 
 // Configure CORS to allow requests from any origin
@@ -832,8 +966,103 @@ app.post('/update-build-id', async (req, res) => {
 app.get('/build-id', (req, res) => {
   res.json({
     buildId: BUILD_ID,
-    buildIdFile: BUILD_ID_FILE
+    buildIdFile: BUILD_ID_FILE,
+    testUrl: `https://reforger.armaplatform.com/_next/data/${BUILD_ID}/workshop.json`,
+    workshopUrl: 'https://reforger.armaplatform.com/workshop'
   });
+});
+
+// NEW: Diagnostic endpoint for BUILD_ID troubleshooting
+app.get('/diagnose-build-id', async (req, res) => {
+  const diagnostics = {
+    currentBuildId: BUILD_ID,
+    buildIdFile: BUILD_ID_FILE,
+    timestamp: new Date().toISOString(),
+    tests: {}
+  };
+
+  // Test 1: Check if current BUILD_ID works
+  try {
+    const testUrl = `https://reforger.armaplatform.com/_next/data/${BUILD_ID}/workshop.json`;
+    const response = await axios.get(testUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      },
+      timeout: 10000
+    });
+    diagnostics.tests.currentBuildIdValid = {
+      status: 'PASS',
+      message: `Current BUILD_ID (${BUILD_ID}) is working`,
+      responseStatus: response.status
+    };
+  } catch (error) {
+    diagnostics.tests.currentBuildIdValid = {
+      status: 'FAIL',
+      message: `Current BUILD_ID (${BUILD_ID}) is not working`,
+      error: error.message,
+      responseStatus: error.response?.status
+    };
+  }
+
+  // Test 2: Try to detect new BUILD_ID
+  try {
+    const oldBuildId = BUILD_ID;
+    const detected = await detectBuildId();
+    diagnostics.tests.autoDetection = {
+      status: detected ? 'UPDATED' : 'UNCHANGED',
+      oldBuildId: oldBuildId,
+      newBuildId: BUILD_ID,
+      message: detected ? 'BUILD_ID was updated' : 'BUILD_ID is current or detection failed'
+    };
+  } catch (error) {
+    diagnostics.tests.autoDetection = {
+      status: 'ERROR',
+      message: 'Failed to run detection',
+      error: error.message
+    };
+  }
+
+  // Test 3: Verify new BUILD_ID works (if it changed)
+  if (diagnostics.tests.autoDetection.status === 'UPDATED') {
+    try {
+      const testUrl = `https://reforger.armaplatform.com/_next/data/${BUILD_ID}/workshop.json`;
+      const response = await axios.get(testUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json'
+        },
+        timeout: 10000
+      });
+      diagnostics.tests.newBuildIdValid = {
+        status: 'PASS',
+        message: `New BUILD_ID (${BUILD_ID}) is working`,
+        responseStatus: response.status
+      };
+    } catch (error) {
+      diagnostics.tests.newBuildIdValid = {
+        status: 'FAIL',
+        message: `New BUILD_ID (${BUILD_ID}) is not working`,
+        error: error.message,
+        responseStatus: error.response?.status
+      };
+    }
+  }
+
+  // Generate recommendations
+  diagnostics.recommendations = [];
+  if (diagnostics.tests.currentBuildIdValid.status === 'FAIL') {
+    diagnostics.recommendations.push('Your current BUILD_ID is invalid. Try running POST /update-build-id to fix it.');
+  }
+  if (diagnostics.tests.autoDetection.status === 'UNCHANGED' && diagnostics.tests.currentBuildIdValid.status === 'FAIL') {
+    diagnostics.recommendations.push('Auto-detection failed. You may need to manually find the BUILD_ID from https://reforger.armaplatform.com/workshop');
+    diagnostics.recommendations.push('Look for "buildId" in the page source and update the .build-id.txt file manually.');
+  }
+  if (diagnostics.tests.autoDetection.status === 'UPDATED' && diagnostics.tests.newBuildIdValid?.status === 'PASS') {
+    diagnostics.recommendations.push('BUILD_ID successfully updated and verified! No action needed.');
+  }
+
+  res.json(diagnostics);
 });
 
 // NEW: Test version history endpoint
@@ -881,10 +1110,30 @@ app.post('/restart', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Enhanced Arma Mod Manager proxy server running on http://0.0.0.0:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Workshop search: curl "http://localhost:${PORT}/proxy?page=1"`);
-  console.log(`Generic proxy: curl "http://localhost:${PORT}/proxy?url=https://example.com"`);
-  console.log(`Fetch mod details: curl "http://localhost:${PORT}/proxy/mod/659527E5E537EAA4"`);
-  console.log(`Check mod: curl "http://localhost:${PORT}/check-mod/59727DF1D1F5F51C"`);
+  console.log('');
+  console.log('═══════════════════════════════════════════════════════════════════');
+  console.log('  🚀 Enhanced Arma Mod Manager Proxy Server');
+  console.log('═══════════════════════════════════════════════════════════════════');
+  console.log(`  Server URL: http://0.0.0.0:${PORT}`);
+  console.log(`  Current BUILD_ID: ${BUILD_ID}`);
+  console.log('');
+  console.log('📍 Available Endpoints:');
+  console.log(`  • Health Check:        GET  /health`);
+  console.log(`  • Workshop Search:     GET  /proxy?page=1&search=...`);
+  console.log(`  • Mod Details:         GET  /proxy/mod/:modId`);
+  console.log(`  • Batch Mod Fetch:     POST /proxy/mods/batch`);
+  console.log(`  • Check Mod Status:    GET  /check-mod/:modId`);
+  console.log(`  • Database Stats:      GET  /database/stats`);
+  console.log('');
+  console.log('🔧 BUILD_ID Management:');
+  console.log(`  • Get BUILD_ID:        GET  /build-id`);
+  console.log(`  • Diagnose BUILD_ID:   GET  /diagnose-build-id`);
+  console.log(`  • Update BUILD_ID:     POST /update-build-id`);
+  console.log('');
+  console.log('💡 Quick Test Commands:');
+  console.log(`  curl "http://localhost:${PORT}/health"`);
+  console.log(`  curl "http://localhost:${PORT}/diagnose-build-id"`);
+  console.log(`  curl "http://localhost:${PORT}/proxy/mod/659527E5E537EAA4"`);
+  console.log('═══════════════════════════════════════════════════════════════════');
+  console.log('');
 });
